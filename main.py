@@ -1,4 +1,5 @@
-import requests 
+import requests
+import sys 
 import time
 import re
 import json
@@ -56,8 +57,18 @@ def extract_keywords(text):
             return keyword_json
          
         except json.JSONDecodeError as e:
+
             print(f"JSON parsing error on attempt {attempt+1}: {e}")
             time.sleep(30)
+
+        except Exception as e:
+            # Catch any Gemini API or network error
+            if "quota" in str(e).lower():
+                print(f"Gemini API quota limit reached. Exiting program: {e}")
+                sys.exit()
+            else:
+                print(f"Unexpected error on attempt {attempt + 1}: {e}")
+                time.sleep(30)
         
     print("Failed to parse keywords after multiple attempts.")
     return None  
@@ -96,12 +107,16 @@ def produce_summary(text):
             summary = response.text.strip()
             return summary
         except Exception as e: 
-            print(f"Error on attempt {attempt + 1}: {e}")
-            if attempt < max_tries - 1:
-                time.sleep(2 ** attempt)
-            else: 
-                print("Could not generate summary")
-                return None
+            if "quota" in str(e).lower():
+                print(f"Gemini API quota limit reached. Stopping script: {e}")
+                sys.exit()
+            else:
+                print(f"Error on attempt {attempt + 1}: {e}")
+                if attempt < max_tries - 1:
+                    time.sleep(2 ** attempt)
+                else: 
+                    print("Could not generate summary")
+                    return None
 
 def insert_database(conn, id, name, date, court, url, keywords,embeddings,summary):
     cur = conn.cursor()

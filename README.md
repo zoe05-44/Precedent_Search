@@ -1,4 +1,4 @@
-**Precedence_Search** 
+## Precedence_Search
 A legal precedent search tool that allows users to find relevant UK legal cases based on natural language input. It uses semantic search with sentence embeddings to retrieve similar cases and present summaries.
 
 ---
@@ -40,8 +40,9 @@ A legal precedent search tool that allows users to find relevant UK legal cases 
 4. **Run the app locally**
     streamlit run main.py
 
+---
 
-**Technologies Used**
+## Technologies Used
 - Python 3.11
 - Streamlit
 - Sentence Transformers
@@ -50,6 +51,8 @@ A legal precedent search tool that allows users to find relevant UK legal cases 
 - Supabase (PostgreSQL backend)
 - LXML, Requests, dotenv
 
-🛡️ Disclaimer
+---
+
+## 🛡️ Disclaimer
 This tool is for educational and prototyping purposes only. It does not constitute legal advice and should not be relied upon for real-world legal decision-making
 
