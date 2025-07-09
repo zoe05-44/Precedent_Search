@@ -113,7 +113,7 @@ def produce_summary(text):
             else:
                 print(f"Error on attempt {attempt + 1}: {e}")
                 if attempt < max_tries - 1:
-                    time.sleep(2 ** attempt)
+                    time.sleep(30)
                 else: 
                     print("Could not generate summary")
                     return None
@@ -133,10 +133,10 @@ def insert_database(conn, id, name, date, court, url, keywords,embeddings,summar
 def generate_embeddings(text):
     return model.encode(text).tolist()  
 
-def fetch_page(max_pages=40, delay = 200):
+def fetch_page(max_pages=40, delay = 120):
     base_url = "https://caselaw.nationalarchives.gov.uk/atom.xml"
     current_url = base_url
-    page = 0
+    page = 14
     while current_url and page < max_pages:
         print(f"\nFetching Page {page + 1}: {current_url}")
         response = requests.get(current_url)
@@ -184,6 +184,7 @@ for entry in fetch_page(max_pages= 20, delay=200):
             case_id = entry.find('atom:id', namespaces).text.strip()
 
         if check_database(conn, case_id):
+            print(f"Skipping {case_id}, already exists in DB.")
             continue
         else:
 
@@ -199,6 +200,7 @@ for entry in fetch_page(max_pages= 20, delay=200):
 
             if not xml_link:
                 print("No XML link found. Skipping.")
+                log_missing_case(case_id)
                 continue
 
             print(f"Fetching XML from: {xml_link}")
@@ -231,10 +233,16 @@ for entry in fetch_page(max_pages= 20, delay=200):
 
             for i, (num, text) in enumerate(paragraphs[:10], 1):
                     output.append(f"{num}. {text}")
-           
-            summary = produce_summary(case_text.text)
+
+            if not output:
+                print(f"[SKIP] No judgment text found for case {case_id}")
+                log_missing_case(case_id)
+                continue
+
+            summary = produce_summary(output)
 
             time.sleep(30)
+
             if summary is not None: 
                 keywords = extract_keywords(output)
                 try: 
@@ -247,6 +255,6 @@ for entry in fetch_page(max_pages= 20, delay=200):
                     continue     
                           
             else: 
-                print(f"case {case_id} cannot be inserted. Try later")
+                print(f"[FAIL] No summary generated for case {case_id}. Not inserted")
                 log_missing_case(case_id)
                 continue     
