@@ -3,12 +3,9 @@ import numpy as np
 import spacy
 from sentence_transformers import SentenceTransformer
 import google.generativeai as genai
-import google.generativeai as genai
-from dotenv import load_dotenv
 import os
 from db import conn 
 
-load_dotenv()
 
 @st.cache_resource
 def load_nlp():
@@ -33,7 +30,9 @@ def filter_input(text):
     return filtered
 
 def extract_keywords(text):
-    genai.configure(api_key=os.getenv("API"))
+    API = os.environ.get("API")
+
+    genai.configure(api_key=API)
     google_model = genai.GenerativeModel("gemini-1.5-flash")
 
     prompt = f"""

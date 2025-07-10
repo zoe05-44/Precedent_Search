@@ -7,7 +7,6 @@ import xml.etree.ElementTree as ET
 from lxml import etree
 import os
 import google.generativeai as genai
-from dotenv import load_dotenv
 from db import conn
 from sentence_transformers import SentenceTransformer
 
@@ -15,9 +14,9 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 max_tries = 3
 
 def extract_keywords(text):
-    load_dotenv()
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     for attempt in range(max_tries):
-        genai.configure(api_key=os.getenv("gemini_API_key"))
+        genai.configure(api_key=GEMINI_API_KEY)
 
         model = genai.GenerativeModel("gemini-1.5-flash")
 
@@ -82,7 +81,9 @@ def check_database(conn, case_id_value):
     return exists
 
 def produce_summary(text):
-    genai.configure(api_key=os.getenv("API"))
+    API = os.environ.get("API")
+
+    genai.configure(api_key=API)
     
     gen_model = genai.GenerativeModel("gemini-1.5-flash")
     
