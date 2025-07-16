@@ -1,19 +1,24 @@
-name: Update Database Daily
-
 on:
   schedule: 
-    - cron: '0 0 * * *'  
-  workflow_dispatch:     
+    - cron: '0 0 * * *'  # runs daily at 00:00 UTC
+  workflow_dispatch:
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Skip odd days
+      run: |
+        day=$(date +%d)
+        if [ $((10#$day % 2)) -ne 0 ]; then
+          echo "Skipping run on odd day: $day"
+          exit 0
+        fi
+
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
