@@ -34,7 +34,7 @@ A legal precedent search tool that allows users to find relevant UK legal cases 
 
 3. **Set up environment variables**
     Create a .env file with your keys:
-        OPENAI_API_KEY=your_key_here
+        API_KEY=your_key_here
         DB_URL=your_postgres_connection_string
 
 4. **Run the app locally**
