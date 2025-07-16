@@ -13,6 +13,7 @@ logging.basicConfig(
 )
 gemini = llm.gemini_model()
 gemini1 = llm.gemini_model1()
+embed_model = llm.load_model()
 
 def log_missing_case(case_id):
     """
@@ -54,7 +55,7 @@ def main():
                     keywords = llm.extract_keywords(case_content, gemini)
                     try: 
                         #Embed keywords
-                        embedded_keywords = llm.generate_embeddings(keywords) 
+                        embedded_keywords = llm.generate_embeddings(keywords, embed_model) 
                         #Insert metadata into database
                         db.insert_database(conn, case_id, title, date, court, xml_link, keywords, embedded_keywords, summary)
                         time.sleep(30)
