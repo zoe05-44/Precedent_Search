@@ -1,4 +1,5 @@
 from db.connection import conn
+from .users_connection import anon_supabase
 import logging 
 
 # Logging setup
@@ -24,29 +25,36 @@ def get_courts():
     """
     Fetch all distinct court names from the 'cases' table.
     """
-    cur = conn.cursor()
+    response = anon_supabase.rpc("distinct_courts").execute()
+    return sorted(response.data)
 
-    cur.execute("SELECT DISTINCT court FROM cases ORDER BY court;")
-    court_types = [row[0] for row in cur.fetchall()]
-    cur.close()
-    return court_types
-
-def fetch_cases(embedded_keywords, court):
+def fetch_cases(embedding, court = "Any", limit = 10):
         """
         Find similar cases using cosine distance between database keywords and input keywords
         """
-        cur = conn.cursor()
-            
-        query = """
-        SELECT case_name, court, url, summary, keyword_vectors <=> %s::vector AS distance
-        FROM cases 
-        WHERE (%s = 'Any' OR court = %s)
-        ORDER BY distance ASC
-        LIMIT 10;
-    """
-        cur.execute(query, (f"[{embedded_keywords}]", court, court))
-        results = cur.fetchall()
-        cur.close()
+        if isinstance(embedding, str):
+            embedding = [float(x) for x in embedding.split(",")] 
+
+        #Function match_cases exists in supabase 
+        response = anon_supabase.rpc(
+            "match_cases",
+            {
+                "query_embedding": embedding,
+                "court_filter": court,
+                "match_count": limit,
+            },
+        ).execute()
+
+        results = []
+        for row in response.data or []:
+            results.append({
+                "case_id": row.get("case_id"),
+                "case_name": row.get("case_name", "Unknown"),
+                "court": row.get("court", "Unknown"),
+                "url": row.get("url", "#"),
+                "summary": row.get("summary", "No summary available."),
+                "similarity_score": row.get("distance", 1.0),  # use distance from your SQL
+            })
         return results
 
 def insert_database(conn, id, name, date, court, url, keywords,embeddings,summary):

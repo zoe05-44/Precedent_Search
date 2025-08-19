@@ -1,9 +1,10 @@
 import streamlit as st
+import uuid
 import numpy as np 
 import utils.genai as llm
 import google.generativeai as genai
-import google.generativeai as genai
 import db.check as db
+from db.fill_query import log_search_transaction, update_feedback_score
 
 nlp = llm.load_nlp()
 gemini = llm.gemini_model()
@@ -13,6 +14,12 @@ embedding_model = llm.load_model()
 st.set_page_config(page_title="Precedence Search Tool",
                 page_icon="⚖️",
                 layout="centered")
+
+#initialise session id 
+if "session_id" not in st.session_state:
+     st.session_state.session_id = str(uuid.uuid4())
+if 'results' not in st.session_state:
+    st.session_state.results = []
 
 #Style
 st.markdown("""
@@ -62,6 +69,7 @@ if(st.button("Find Precedence")):
             redacted_input = llm.filter_input(user_input, nlp)
             #Extract keywords
             keywords = llm.extract_user_keywords(redacted_input, gemini).strip()
+            st.session_state.keywords = keywords  # Save to session_state
             #embed input
             embedding = llm.generate_embeddings(keywords, embedding_model)
             embedding = embedding / np.linalg.norm(embedding)
@@ -69,18 +77,71 @@ if(st.button("Find Precedence")):
 
             #Fetch the top matching cases
             results = db.fetch_cases(embedded_keywords, selected_court)
+            query_id = str(uuid.uuid4())
 
-            #Display Results
-            st.subheader("Extracted Keywords")
-            st.markdown(f"`{keywords}`")
+            #Store Query info
+            query_info = {
+                "session_id": st.session_state.session_id,
+                "query_text": user_input,
+                "extracted_keywords": {"keywords": keywords},
+                "query_embedding": embedding.tolist(),
+                "query_id": query_id,
+            }
+            st.session_state.query_info = query_info  # Save in session for later use
 
-            st.subheader("Top Matching Cases")
-            #Convert cosine distance to confidence %
-            for name, court, url, summary, score in results:
-                if 0 <= score <= 2:
-                    confidence = (1 - score / 2)  
-                else:
-                    confidence = 0  
+            #Store results in session state
+            st.session_state.results = [
+                {
+                    "case_id": res["case_id"],
+                    "name": res["case_name"],
+                    "court": res["court"],
+                    "url": res["url"],
+                    "summary": res["summary"],
+                    "similarity_score": res["similarity_score"],
+                    "query_id": query_id,
+                    "rank": i + 1,
+                    "feedback_score": None,
+                    "query_result_id": str(uuid.uuid4())
+                }
+                for i, res in enumerate(results)
+            ]
 
-                st.markdown(f"**{name}** ({court})  \n[View Case]({url})")
-                st.markdown(f"**Confidence:** `{round(confidence * 100, 1)}%`  \n**Summary:** {summary}")                
+            #log the search data into database
+            log_search_transaction(query_info, st.session_state.results)
+
+            
+#Display Keywords
+if "keywords" in st.session_state:
+    st.subheader("Extracted Keywords")
+    st.markdown(f"`{st.session_state.keywords}`")
+#Display Results
+if "results" in st.session_state and st.session_state.results:
+    st.subheader("Top Matching Cases")
+    for result in st.session_state.results:
+        with st.container(border=True): 
+            score = float(result['similarity_score'])
+            confidence = max(0, (1 - score) * 100) # Convert similarity to % confidence
+
+            #Displaay Case info
+            st.markdown(f"#### {result['name']} ({result['court']})")
+            st.markdown(f"**Similarity:** {confidence:.2f}% | [View Case]({result['url']})")
+            st.markdown(f"**Summary:** {result['summary']}")
+
+            #Display for user feedback on cases
+            st.write("**Rate this result's relevance:**")
+            cols = st.columns(5)
+            for i in range(5):
+                score_value = i + 1
+                with cols[i]:
+                    #Button has a unique key tied to the query_id
+                    if st.button(f"{score_value} ⭐", key=f"score_{score_value}_{result['query_result_id']}"):
+                        #Update Database 
+                        success = update_feedback_score(
+                            query_result_id=result['query_result_id'],
+                            feedback_score=score_value
+                        )
+                        if success:
+                            st.toast(f"Thanks! You rated '{result['name']}' as {score_value} ⭐.")
+                        else:
+                            st.error("Could not save feedback.")
+              
