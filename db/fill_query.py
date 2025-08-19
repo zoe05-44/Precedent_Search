@@ -28,7 +28,7 @@ def log_query_results(cur, query_id, case_id, rank, similarity_score, feedback_s
     VALUES (%s, %s, %s, %s, %s, %s);
     """
     cur.execute(query, (query_id, case_id, rank, similarity_score, feedback_score, query_result_id))
-    logging._SysExcInfoType("query inserted")
+    logging.info("query inserted")
 
 def log_search_transaction(query_data, results_data):
     """
@@ -67,8 +67,9 @@ def log_search_transaction(query_data, results_data):
 
     except Exception as e:
         # If any step fails, roll back the entire transaction
-        logging.error(f"Transaction failed: {e}")
+        logging.error("Transaction failed: %s", e, exc_info=True)
         conn.rollback()
+
 
 def update_feedback_score(query_result_id, feedback_score):
     """
