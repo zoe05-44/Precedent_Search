@@ -47,7 +47,7 @@ def load_model():
     """
     Load and return embedding model.
     """
-    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+    embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     return embedding_model
 
 def generate_embeddings(text, model):
