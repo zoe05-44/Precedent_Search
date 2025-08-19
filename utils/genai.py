@@ -6,7 +6,8 @@ import json
 import sys
 import time
 from sentence_transformers import SentenceTransformer
-import logging 
+import logging
+import torch 
 
 # Logging setup
 logging.basicConfig(
@@ -47,6 +48,7 @@ def load_model():
     """
     Load and return embedding model.
     """
+    torch.set_default_device("cpu")
     embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     return embedding_model
 
