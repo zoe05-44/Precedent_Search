@@ -1,5 +1,6 @@
 ## Precedence_Search
-A legal precedent search tool that allows users to find relevant UK legal cases based on natural language input. It uses semantic search with sentence embeddings to retrieve similar cases and present summaries.
+A legal precedent search tool that allows users to find relevant UK legal cases based on natural language input.  
+It uses semantic search with sentence embeddings to retrieve similar cases and present summaries.
 
 ---
 
@@ -13,9 +14,10 @@ A legal precedent search tool that allows users to find relevant UK legal cases 
 
 ---
 
-## UI Preview
+## UI
+[![Website](https://img.shields.io/badge/Visit-PrecedenceSearch-blue?style=for-the-badge&logo=streamlit)](https://precedencesearch-zoee.streamlit.app/)
 
-*UI is built in Streamlit but not yet deployed. Sample layout includes:*
+*UI is built in Streamlit. Sample layout includes:*
 - Text input for legal query
 - Top similar cases displayed with titles and summaries
 - Option to view full case metadata
@@ -37,7 +39,7 @@ A legal precedent search tool that allows users to find relevant UK legal cases 
         API_KEY=your_key_here
         DB_URL=your_postgres_connection_string
 
-4. **Run the app locally**
+5. **Run the app locally**
     streamlit run main.py
 
 ---
