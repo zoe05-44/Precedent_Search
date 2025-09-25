@@ -68,7 +68,7 @@ if(st.button("Find Precedence")):
             #Filter user input
             redacted_input = llm.filter_input(user_input, nlp)
             #Extract keywords
-            keywords = llm.extract_user_keywords(redacted_input, gemini).strip()
+            keywords = (llm.extract_user_keywords(redacted_input, gemini) or redacted_input).strip()
             st.session_state.keywords = keywords  # Save to session_state
             #embed input
             embedding = llm.generate_embeddings(keywords, embedding_model)
