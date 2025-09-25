@@ -168,6 +168,9 @@ def extract_user_keywords(text, model):
     """
     extract keywords from the users' case description
     """
+    if model is None:
+        logging.error("Gemini model is None")
+        return text
 
     prompt = f"""
   Read the provided "Legal Text" carefully.
