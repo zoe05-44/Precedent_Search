@@ -11,7 +11,7 @@ gemini = llm.gemini_model()
 embedding_model = llm.load_model()
 
 #Page Configuration
-st.set_page_config(page_title="Precedence Search Tool",
+st.set_page_config(page_title="Precedent Search Tool",
                 page_icon="⚖️",
                 layout="centered")
 
@@ -50,7 +50,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 #Title
-st.markdown("<h1 style='text-align: center; font-size: 2.5em;'>Precedence Search Tool</h1>",
+st.markdown("<h1 style='text-align: center; font-size: 2.5em;'>Precedent Search Tool</h1>",
             unsafe_allow_html=True)
 #User input
 user_input = st.text_input("Describe your case",
@@ -60,7 +60,7 @@ court_options = ["Any"] + db.get_courts()
 selected_court = st.selectbox("Filter by Court", court_options) 
 
 #Search Logic
-if(st.button("Find Precedence")):
+if(st.button("Find Precedent")):
     if not user_input.strip():
         st.warning("Please enter a case description.")
     else: 
