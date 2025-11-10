@@ -24,7 +24,7 @@ def gemini_model1():
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
     genai.configure(api_key=GEMINI_API_KEY)
-    gen_model = genai.GenerativeModel("gemini-1.5-flash")
+    gen_model = genai.GenerativeModel("gemini-flash-latest")
     return gen_model
 
 def gemini_model():
@@ -34,7 +34,7 @@ def gemini_model():
     API = os.environ.get("API")
 
     genai.configure(api_key=API)    
-    gen_model = genai.GenerativeModel("gemini-1.5-flash")
+    gen_model = genai.GenerativeModel("gemini-flash-latest")
     return gen_model
 
 def load_nlp():
