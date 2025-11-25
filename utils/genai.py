@@ -8,6 +8,8 @@ import time
 from sentence_transformers import SentenceTransformer
 import logging
 import torch 
+from dotenv import load_dotenv
+load_dotenv()
 
 # Logging setup
 logging.basicConfig(
@@ -123,11 +125,12 @@ def extract_keywords(text, model):
 
         try:
             response = model.generate_content(prompt)
+            logging.info(f"Gemini output: {response}")
             raw_output = response.text.strip()
 
             cleaned = raw_output
-            #Clean Gemini output to remove beginning triple backticks and the word python 
-            cleaned = re.sub(r"^```(?:python)?\n", "", cleaned)
+            #Clean output to remove beginning triple backticks and the word python 
+            cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned, flags=re.MULTILINE)
             #remove ending triple backticks
             cleaned = re.sub(r"```$", "", cleaned)
             #remove begging tags such as  keywords = {}
@@ -141,7 +144,7 @@ def extract_keywords(text, model):
             #exclude reponse after last closing '}'
             cleaned = cleaned[:last_brace_index+1]
 
-            logging.info("Cleaned output from Gemini:")
+            logging.info(f"Cleaned output from Gemini:{cleaned}")
             
             keyword_dict = json.loads(cleaned) 
             keyword_json = json.dumps(keyword_dict)  # Convert to JSON string
