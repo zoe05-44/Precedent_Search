@@ -3,6 +3,7 @@ import requests
 import xml.etree.ElementTree as ET
 from lxml import etree
 import logging
+import re
 
 # Logging setup
 logging.basicConfig(
@@ -14,8 +15,116 @@ logging.basicConfig(
 namespaces = {
     'atom': 'http://www.w3.org/2005/Atom',
     'tna': 'https://caselaw.nationalarchives.gov.uk',
-    'akn': 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0'
-}
+    'akn': 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0',
+    'uk': 'https://caselaw.nationalarchives.gov.uk/akn'}
+UK_NS = 'https://caselaw.nationalarchives.gov.uk/akn'
+
+def build_case_url(citation): 
+    pattern = r"""
+    \[(?P<year>\d{4})\]                # year in square brackets
+    \s+
+    (?P<court>[A-Z]+)                 # court (EWHC, EWCA, UKFTT)
+    (?:\s+(?P<division>[A-Za-z]+))?   # optional division (Civ, Crim)
+    \s+
+    (?P<number>\d+)                   # case number
+    (?:\s+\((?P<subdivision>[^)]+)\))? # optional (Ch), (QB), etc.
+    """
+    match = re.search(pattern, citation, re.VERBOSE)
+    if not match:
+        return "No Citation Found"    #Filter out parts that are None 
+
+    court = match.group('court').lower()
+    year = match.group('year')
+    number = match.group('number')
+        
+        # 2. Determine the middle "branch" (subdivision or division)
+    branch = (match.group('subdivision') or match.group('division') or "").lower()
+            
+        # 3. Build the URL string
+    if branch:
+        return f"https://caselaw.nationalarchives.gov.uk/{court}/{branch}/{year}/{number}/data.xml"
+    else:
+        return f"https://caselaw.nationalarchives.gov.uk/{court}/{year}/{number}/data.xml"    
+
+
+def extract_from_xml(url):
+    doc = requests.get(url)
+    logging.info(f"Fetched case file from {url} successfully")
+    et_root = ET.fromstring(doc.text)      # for all existing functions
+    lxml_root = etree.fromstring(doc.content)  # for context extraction
+    return et_root, lxml_root
+
+def normalize_citation(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip())
+
+def get_cited_cases(et_entry, lxml_entry):
+    refs = et_entry.findall('.//akn:ref', namespaces)
+    cases_cited = []
+    seen = set()
+
+    for ref in refs:
+        if ref.get(f'{{{UK_NS}}}type') != 'case':
+            continue
+        if ref.get(f'{{{UK_NS}}}isNeutral') != 'true':
+            continue
+
+        citation_text = ref.get(f'{{{UK_NS}}}canonical')
+        if not citation_text:
+            continue
+
+        citation_text = normalize_citation(citation_text)
+        if citation_text in seen:
+            continue
+        seen.add(citation_text)
+
+        # Get context using lxml
+        lxml_refs = lxml_entry.xpath(
+            f".//akn:ref[@uk:canonical='{citation_text}']",
+            namespaces=namespaces
+        )
+        context = None
+        if lxml_refs:
+            para = lxml_refs[0].xpath("ancestor::*[local-name()='p'][1]")
+            if para:
+                context = para[0].xpath("string(.)").strip()[:300]
+
+        cases_cited.append({
+            "citation_text": citation_text,
+            "context": context
+        })
+    return cases_cited
+
+def get_nuetral_citation(entry): 
+    cite_elem = entry.find('.//akn:proprietary/uk:cite', namespaces)
+    if cite_elem is not None and cite_elem.text:
+        return normalize_citation(cite_elem.text)
+    fallback_elem = entry.find('.//akn:neutralCitation', namespaces)
+    if fallback_elem is not None and fallback_elem.text:
+        return normalize_citation(fallback_elem.text)
+
+    court_elem = entry.find('.//uk:court', namespaces)
+    year_elem = entry.find('.//uk:year', namespaces)
+    number_elem = entry.find('.//uk:number', namespaces)
+
+    if all(e is not None for e in [court_elem, year_elem, number_elem]):
+        court_text = court_elem.text.strip()
+        year_text = year_elem.text.strip()
+        number_text = number_elem.text.strip()
+
+        if "-" in court_text:
+            main, division = court_text.split("-", 1)
+
+            if division.lower() == "civil":
+                division = "Civ"
+            elif division.lower() == "criminal":
+                division = "Crim"
+
+            formatted_court = f"{main} {division}"
+        else:
+            formatted_court = court_text
+
+        return f"[{year_text}] {formatted_court} {number_text}"
+    return None
 
 def fetch_page(delay=120):
     """
@@ -63,9 +172,25 @@ def extract_case(entry):
     """
     Extract case metadata: title, date, name, and xml_link
     """
-    title = entry.find('atom:title', namespaces).text.strip()
-    date = entry.find('atom:published', namespaces).text.strip()
-    court = entry.find('atom:author/atom:name', namespaces).text.strip()
+    title_tag= entry.find('atom:title', namespaces)
+    if title_tag is not None: 
+        title = title_tag.text.strip()
+    else: 
+        title = 'Unknown'
+
+    date_tag = entry.find('atom:published', namespaces)
+    if date_tag is None: 
+        date_tag = entry.find('atom:updated', namespaces)
+    if date_tag is not None: 
+        date = date_tag.text.strip()
+    else: 
+        date = 'Unknown'
+
+    court_tag = entry.find('atom:author/atom:name', namespaces)
+    if court_tag is not None: 
+        court = court_tag.text.strip()
+    else: 
+        court = 'Unknown'
 
     xml_link = None
     for link in entry.findall('atom:link', namespaces):
