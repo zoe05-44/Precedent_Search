@@ -126,6 +126,48 @@ def get_nuetral_citation(entry):
         return f"[{year_text}] {formatted_court} {number_text}"
     return None
 
+def extract_and_process_citations(case_id, xml_url):
+    """
+    Extract neutral citation and cited cases from a case XML file.
+    
+    Args:
+        case_id: The unique case identifier
+        xml_url: The URL to the case XML file
+        
+    Returns:
+        Dictionary with keys:
+            - 'case_id': The case identifier
+            - 'neutral_citation': The neutral citation (str or None)
+            - 'cited_cases': List of cited case dictionaries with 'citation_text' and 'context'
+            - 'success': Boolean indicating if extraction was successful
+            - 'error': Error message if unsuccessful (None if successful)
+    """
+    try:
+        et_root, lxml_root = extract_from_xml(xml_url)
+        
+        # Extract neutral citation
+        neutral_citation = get_nuetral_citation(et_root)
+        
+        # Extract cited cases
+        cited_cases = get_cited_cases(et_root, lxml_root)
+        
+        return {
+            'case_id': case_id,
+            'neutral_citation': neutral_citation,
+            'cited_cases': cited_cases,
+            'success': True,
+            'error': None
+        }
+    except Exception as e:
+        logging.error(f"Failed to extract citations for case {case_id}: {e}")
+        return {
+            'case_id': case_id,
+            'neutral_citation': None,
+            'cited_cases': [],
+            'success': False,
+            'error': str(e)
+        }
+
 def fetch_page(delay=120):
     """
     Fetch page-by-page XML feed of legal cases.

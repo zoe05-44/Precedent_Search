@@ -1,4 +1,5 @@
 import db.check as db
+import db.citation_op as CT
 import time
 import json
 from db.connection import conn
@@ -59,6 +60,30 @@ def main():
                         #Insert metadata into database
                         db.insert_database(conn, case_id, title, date, court, xml_link, keywords, embedded_keywords, summary)
                         time.sleep(30)
+                        
+                        #Extract and process citations
+                        citation_data = source.extract_and_process_citations(case_id, xml_link)
+                        if citation_data['success']:
+                            cur = conn.cursor()
+                            try:
+                                # Update neutral citation
+                                if citation_data['neutral_citation']:
+                                    CT.update_neutral_citation(cur, case_id, citation_data['neutral_citation'])
+                                    logging.info(f"Updated neutral citation for {case_id}: {citation_data['neutral_citation']}")
+                                
+                                # Insert cited cases
+                                if citation_data['cited_cases']:
+                                    CT.insert_citations(cur, case_id, citation_data['cited_cases'])
+                                    logging.info(f"Inserted {len(citation_data['cited_cases'])} citations for {case_id}")
+                                
+                                conn.commit()
+                            except Exception as e:
+                                logging.error(f"Failed to insert citations for case {case_id}: {e}")
+                                conn.rollback()
+                            finally:
+                                cur.close()
+                        else:
+                            logging.warning(f"Citation extraction failed for {case_id}: {citation_data['error']}")
                     except Exception as e: 
                         logging.error(f"case {case_id} failed during keyword embedding or DB insertion: {e}")
                         log_missing_case(case_id)
