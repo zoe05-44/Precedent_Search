@@ -6,6 +6,7 @@ import time
 import json
 import utils.genai as llm
 import logging
+from utils.api import process_single_case, extract_case_metadata_from_xml  # Import the modular functions
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,7 +25,7 @@ def bakfill_missing_metadata():
         logger.warning("No missing cases retrieved from the database.")
         return
 
-    logger.info(f"Starting processing for {len(missing)} cases.")
+    logger.info(f"Starting backfill processing for {len(missing)} cases.")
 
     for citation, occ in missing: 
         # Handle the 'None' citation before it hits the API function
@@ -35,40 +36,34 @@ def bakfill_missing_metadata():
         try: 
             xml_link = api.build_case_url(citation)
             
-            if not xml_link:
-                    logging.warning(f"Could not construct URL for {citation}")
-                    continue
-            #get case content
-            case_content = api.cases_content(xml_link )
-            if not case_content:
-                logging.error(f"Could not fetch content from {xml_link}")
+            if not xml_link or xml_link == "No Citation Found":
+                logging.warning(f"Could not construct URL for {citation}")
                 continue
-                #Get case summary
-            summary = llm.produce_summary(case_content, gemini1)
-            time.sleep(30) # Respect rate limits
             
-            if summary:
-                keywords = llm.extract_keywords(case_content, gemini)
-                embedded_keywords = llm.generate_embeddings(keywords, embed_model)
-
-                db.insert_database(
-                    conn, 
-                    citation, 
-                    xml_link, 
-                    keywords, 
-                    embedded_keywords, 
-                    summary
-                )
+            # Extract metadata directly from the XML file (same way main.py does from Atom entry)
+            title, date, court = extract_case_metadata_from_xml(xml_link)
+            logger.info(f"Extracted metadata for {citation}: title={title}, date={date}, court={court}")
+                
+            # Use the modular processing function with extracted metadata
+            success = process_single_case(
+                case_id=citation,  # Use citation as case_id for backfill
+                xml_link=xml_link,
+                title=title,       # Extracted from XML
+                date=date,         # Extracted from XML (valid database date)
+                court=court,       # Extracted from XML
+                extract_metadata_if_missing=False  # Metadata already extracted, don't re-extract
+            )
+            
+            if success:
                 logging.info(f"Successfully backfilled {citation}")
-                time.sleep(30)
             else:
-                logging.error(f"Summary generation failed for {citation}")
-
+                logging.error(f"Failed to backfill {citation}")
+                
         except Exception as e:
             logging.error(f"Error during backfill of {citation}: {e}")
             continue
 
-    logger.info("Batch processing complete.")
+    logger.info("Backfill processing complete.")
 
 if __name__ == "__main__":
     bakfill_missing_metadata()

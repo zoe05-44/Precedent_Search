@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from lxml import etree
 import logging
 import re
+import json
 
 # Logging setup
 logging.basicConfig(
@@ -11,6 +12,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
 # Define XML namespaces for parsing
 namespaces = {
     'atom': 'http://www.w3.org/2005/Atom',
@@ -37,10 +40,10 @@ def build_case_url(citation):
     year = match.group('year')
     number = match.group('number')
         
-        # 2. Determine the middle "branch" (subdivision or division)
+        # Determine the middle "branch" (subdivision or division)
     branch = (match.group('subdivision') or match.group('division') or "").lower()
             
-        # 3. Build the URL string
+        # Build the URL string
     if branch:
         return f"https://caselaw.nationalarchives.gov.uk/{court}/{branch}/{year}/{number}/data.xml"
     else:
@@ -289,3 +292,226 @@ def case_content(xml_link):
         output.append(f"{num}. {text}")
 
     return output
+
+def log_missing_case(case_id):
+    """
+    Insert cases that couldn't be added to the database to a file for record
+    """
+    try:
+        with open("missing_cases", "r") as file:
+            missing_case = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        missing_case = []
+    missing_case.append(case_id)
+    with open("missing_cases", "w") as f:
+        json.dump(missing_case, f)
+
+def extract_date_from_citation(citation):
+    """
+    Extract year from legal citation and return as valid date string.
+    Examples: "[2009] EWHC 339 (Ch)" -> "2009-01-01"
+    """
+    if not citation:
+        # Return today's date as fallback
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d")
+    
+    try:
+        # Extract year from citation using regex
+        year_match = re.search(r'\[(\d{4})\]', citation)
+        if year_match:
+            year = year_match.group(1)
+            return f"{year}-01-01"  # Use first day of the year
+        else:
+            # Fallback to today's date
+            from datetime import datetime
+            return datetime.now().strftime("%Y-%m-%d")
+    except Exception as e:
+        logging.warning(f"Could not extract year from citation '{citation}': {e}")
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d")
+
+def extract_case_metadata_from_xml(xml_url):
+    """
+    Extract case metadata (title, date, court) directly from case XML file.
+    Similar to extract_case() but works with XML URLs instead of Atom entries.
+    
+    Args:
+        xml_url: URL to the case XML file
+        
+    Returns:
+        tuple: (title, date, court) extracted from XML
+    """
+    try:
+        et_root, _ = extract_from_xml(xml_url)
+        
+        # Try to extract title from neutral citation
+        title = get_nuetral_citation(et_root)
+        if not title:
+            title = f"Case from {xml_url}"
+        
+        # Try to extract published date
+        date = None
+        date_elem = et_root.find('.//atom:published', namespaces)
+        if date_elem is not None and date_elem.text:
+            date = date_elem.text.strip()
+        else:
+            date_elem = et_root.find('.//atom:updated', namespaces)
+            if date_elem is not None and date_elem.text:
+                date = date_elem.text.strip()
+        
+        # If no date found in XML, extract from citation
+        if not date:
+            if title:
+                date = extract_date_from_citation(title)
+            else:
+                from datetime import datetime
+                date = datetime.now().strftime("%Y-%m-%d")
+        
+        # Try to extract court
+        court = None
+        court_elem = et_root.find('.//atom:author/atom:name', namespaces)
+        if court_elem is not None and court_elem.text:
+            court = court_elem.text.strip()
+        else:
+            court_elem = et_root.find('.//uk:court', namespaces)
+            if court_elem is not None and court_elem.text:
+                court = court_elem.text.strip()
+        
+        if not court:
+            court = "Unknown"
+        
+        return title, date, court
+        
+    except Exception as e:
+        logging.error(f"Failed to extract metadata from XML {xml_url}: {e}")
+        # Return sensible defaults
+        from datetime import datetime
+        return f"Case from {xml_url}", datetime.now().strftime("%Y-%m-%d"), "Unknown"
+
+def process_single_case(case_id, xml_link, title=None, date=None, court=None, extract_metadata_if_missing=True):
+    """
+    Process a single case: extract content, generate summary, keywords, embeddings,
+    and citations, then insert/update database.
+    
+    Args:
+        case_id: Unique case identifier
+        xml_link: URL to the case XML file
+        title: Case title (optional, will extract if None and extract_metadata_if_missing=True)
+        date: Case date (optional, will extract if None and extract_metadata_if_missing=True) 
+        court: Case court (optional, will extract if None and extract_metadata_if_missing=True)
+        extract_metadata_if_missing: If True, extract missing metadata from XML
+    
+    Returns:
+        bool: True if successful, False if failed
+    """
+    import db.check as db
+    import db.citation_op as CT
+    from db.connection import conn
+    import utils.genai as llm
+    
+    # Initialize AI models
+    gemini = llm.gemini_model()
+    gemini1 = llm.gemini_model1()
+    embed_model = llm.load_model()
+    
+    try:
+        # Rate limiting: longer sleep between cases to avoid AI quota limits (20 requests per period)
+        time.sleep(15)  # Increased from 5 to 15 seconds
+        
+        # If metadata not provided and we should extract it, we need to get it from somewhere
+        # For backfill cases, we might need to extract metadata from the XML
+        if (title is None or date is None or court is None) and extract_metadata_if_missing:
+            # For backfill, we might need to extract metadata from the XML content
+            # This is a simplified approach - in practice you might need more sophisticated extraction
+            try:
+                # Try to extract basic metadata from XML
+                et_root, _ = extract_from_xml(xml_link)
+                if title is None:
+                    title_elem = et_root.find('.//atom:title', namespaces)
+                    title = title_elem.text.strip() if title_elem is not None else f"Case {case_id}"
+                if date is None:
+                    date_elem = et_root.find('.//atom:published', namespaces)
+                    if date_elem is None:
+                        date_elem = et_root.find('.//atom:updated', namespaces)
+                    date = date_elem.text.strip() if date_elem is not None else None
+                if court is None:
+                    court_elem = et_root.find('.//atom:author/atom:name', namespaces)
+                    court = court_elem.text.strip() if court_elem is not None else "Unknown"
+            except Exception as e:
+                logging.warning(f"Could not extract metadata for {case_id}, using defaults: {e}")
+                if title is None: title = f"Case {case_id}"
+                if date is None: date = None  # Will be extracted from citation later
+                if court is None: court = "Unknown"
+            
+            # If date is still None, extract from citation (for backfill cases)
+            if date is None:
+                date = extract_date_from_citation(case_id)
+            
+        if xml_link is not None: 
+            content_data = case_content(xml_link)
+
+            #Generate case summary (first AI call)
+            summary = llm.produce_summary(content_data, gemini1)
+            time.sleep(45)  # Increased from 30 to 45 seconds between AI calls
+
+            if summary is not None: 
+                #Extract keywords from case content (second AI call)
+                keywords = llm.extract_keywords(content_data, gemini)
+                try: 
+                    #Embed keywords
+                    embedded_keywords = llm.generate_embeddings(keywords, embed_model) 
+                    #Insert metadata into database
+                    db.insert_database(conn, case_id, title, date, court, xml_link, keywords, embedded_keywords, summary)
+                    time.sleep(60)  # Increased from 30 to 60 seconds after database operations
+                    
+                    #Extract and process citations
+                    citation_data = extract_and_process_citations(case_id, xml_link)
+                    if citation_data['success']:
+                        cur = conn.cursor()
+                        try:
+                            # Update neutral citation
+                            if citation_data['neutral_citation']:
+                                CT.update_neutral_citation(cur, case_id, citation_data['neutral_citation'])
+                                logging.info(f"Updated neutral citation for {case_id}: {citation_data['neutral_citation']}")
+                            
+                            # Insert cited cases
+                            if citation_data['cited_cases']:
+                                CT.insert_citations(cur, case_id, citation_data['cited_cases'])
+                                logging.info(f"Inserted {len(citation_data['cited_cases'])} citations for {case_id}")
+                            
+                            conn.commit()
+                        except Exception as e:
+                            logging.error(f"Failed to insert citations for case {case_id}: {e}")
+                            conn.rollback()
+                        finally:
+                            cur.close()
+                    else:
+                        logging.warning(f"Citation extraction failed for {case_id}: {citation_data['error']}")
+                    
+                    return True
+                    
+                except Exception as e: 
+                    logging.error(f"case {case_id} failed during keyword embedding or DB insertion: {e}")
+                    # Rollback transaction to prevent "transaction aborted" errors on subsequent operations
+                    try:
+                        conn.rollback()
+                        logging.info(f"Rolled back transaction for failed case {case_id}")
+                    except Exception as rollback_error:
+                        logging.warning(f"Could not rollback transaction: {rollback_error}")
+                    log_missing_case(case_id)
+                    return False     
+                        
+            else: 
+                logging.error(f"[FAIL] No summary generated for case {case_id}. Not inserted")
+                log_missing_case(case_id)
+                return False 
+        else: 
+            logging.error(f"[FAIL] xml link not found for {case_id}")
+            log_missing_case(case_id)
+            return False
+            
+    except Exception as e:
+        logging.error(f"Unexpected error processing case {case_id}: {e}")
+        log_missing_case(case_id)
+        return False
